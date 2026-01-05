@@ -11,7 +11,6 @@ import {
   collection,
   getDocs,
   addDoc,
-  deleteDoc,
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -189,11 +188,6 @@ export default function AdminPage() {
     } finally {
       setBusy(false);
     }
-  };
-
-  const deleteInvite = async () => {
-    // optional: if you want to delete the created invite doc once you’re done
-    // not required. leaving here would require keeping invite doc id.
   };
 
   const copyInviteLink = async () => {
