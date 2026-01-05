@@ -36,8 +36,28 @@ type InviteDoc = {
   email: string;
   businessId: string;
   role: Role;
-  createdAt?: any;
+  createdAt?: unknown;
 };
+
+type UserDoc = {
+  businessId?: string;
+};
+
+function getErrorMessage(err: unknown): string {
+  if (err && typeof err === 'object' && 'message' in err) {
+    const m = (err as { message?: unknown }).message;
+    if (typeof m === 'string') return m;
+  }
+  return 'An unexpected error occurred';
+}
+
+function getAuthErrorCode(err: unknown): string | undefined {
+  if (err && typeof err === 'object' && 'code' in err) {
+    const c = (err as { code?: unknown }).code;
+    if (typeof c === 'string') return c;
+  }
+  return undefined;
+}
 
 const AuthPage: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -49,7 +69,7 @@ const AuthPage: React.FC = () => {
   const [businessName, setBusinessName] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const [loading, setLoading] = useState(false); // ✅ NEW
+  const [loading, setLoading] = useState(false);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -137,8 +157,8 @@ const AuthPage: React.FC = () => {
       );
 
       await deleteDoc(inviteRef);
-    } catch (e: any) {
-      const msg = String(e?.message || '');
+    } catch (e: unknown) {
+      const msg = getErrorMessage(e);
       if (msg.toLowerCase().includes('missing or insufficient permissions')) {
         throw new Error(
           'Invite acceptance failed due to Firestore permissions. Check your Firestore rules (invites read, members/users write).'
@@ -182,8 +202,8 @@ const AuthPage: React.FC = () => {
           const cred = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
           uid = cred.user.uid;
           emailStr = cred.user.email || trimmedEmail;
-        } catch (err: any) {
-          const code = String(err?.code || '');
+        } catch (err: unknown) {
+          const code = getAuthErrorCode(err) || '';
           if (code === 'auth/email-already-in-use') {
             const cred = await signInWithEmailAndPassword(auth, trimmedEmail, password);
             uid = cred.user.uid;
@@ -205,8 +225,7 @@ const AuthPage: React.FC = () => {
 
       router.push('/dashboard');
     } catch (err: unknown) {
-      if (err instanceof Error) setError(err.message || 'Something went wrong');
-      else setError('An unexpected error occurred');
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -234,16 +253,18 @@ const AuthPage: React.FC = () => {
 
       const userRef = doc(db, 'users', user.uid);
       const snap = await getDoc(userRef);
+      const data = snap.data() as UserDoc | undefined;
 
-      if (snap.exists() && (snap.data() as any)?.businessId) {
+      if (snap.exists() && data?.businessId) {
         router.push('/dashboard');
         return;
       }
 
-      throw new Error('To create a new business with Google, switch to Sign Up and enter your Full Name + Business Name first.');
+      throw new Error(
+        'To create a new business with Google, switch to Sign Up and enter your Full Name + Business Name first.'
+      );
     } catch (err: unknown) {
-      if (err instanceof Error) setError(err.message || 'Google Sign-In failed');
-      else setError('An unexpected error occurred');
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -253,7 +274,7 @@ const AuthPage: React.FC = () => {
 
   return (
     <div className="flex justify-center items-center min-h-screen px-4 relative">
-      {/* ✅ Loading overlay */}
+      {/* Loading overlay */}
       {loading && (
         <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
           <div className="bg-white rounded-2xl shadow-lg p-6 flex flex-col items-center gap-3">
@@ -265,9 +286,7 @@ const AuthPage: React.FC = () => {
 
       <br />
       <div className="w-full max-w-2xl bg-white rounded-3xl shadow-lg p-8 sm:p-10 transition-transform hover:scale-105 duration-300">
-        <h2 className="text-3xl font-extrabold mb-4 text-center text-gray-700">
-          {siteDetails.siteName}
-        </h2>
+        <h2 className="text-3xl font-extrabold mb-4 text-center text-gray-700">{siteDetails.siteName}</h2>
 
         <p className="text-center text-gray-500 mb-6 text-sm">
           {isInvite
@@ -309,7 +328,7 @@ const AuthPage: React.FC = () => {
           />
 
           {/* Business Name only when signing up WITHOUT invite */}
-          {!isSignupFlowBlockedByInvite(inviteId, isLogin) && !isLogin && !isInvite && (
+          {!isSignupFlowBlockedByInvite(inviteId) && !isLogin && !isInvite && (
             <input
               type="text"
               placeholder="Business Name"
@@ -368,16 +387,14 @@ const AuthPage: React.FC = () => {
         </button>
 
         {!!inviteId && (
-          <p className="text-xs text-gray-500 mt-3 text-center">
-            Invite sign-up is enabled, so login toggle is disabled.
-          </p>
+          <p className="text-xs text-gray-500 mt-3 text-center">Invite sign-up is enabled, so login toggle is disabled.</p>
         )}
       </div>
     </div>
   );
 };
 
-function isSignupFlowBlockedByInvite(inviteId: string | null, isLogin: boolean) {
+function isSignupFlowBlockedByInvite(inviteId: string | null) {
   return !!inviteId;
 }
 

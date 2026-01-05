@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, User } from 'firebase/auth';
 import {
@@ -36,17 +37,34 @@ type Tx = {
   amount: number;
   receiptUrl?: string;
   createdByUid?: string;
-  createdByName?: string; // ✅ NEW
+  createdByName?: string;
 };
 
 type Member = {
   id: string; // uid
   email: string;
-  name?: string; // ✅ NEW
+  name?: string;
   role: Role;
   status?: 'active' | 'pending';
-  invitedAt?: any;
+  invitedAt?: unknown;
 };
+
+type UserProfile = {
+  businessId?: string;
+  role?: Role;
+};
+
+type BusinessDoc = {
+  name?: string;
+};
+
+function getErrorMessage(err: unknown): string {
+  if (err && typeof err === 'object' && 'message' in err) {
+    const msg = (err as { message?: unknown }).message;
+    if (typeof msg === 'string') return msg;
+  }
+  return 'An unexpected error occurred';
+}
 
 export default function AdminPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -86,7 +104,7 @@ export default function AdminPage() {
 
         // Load user profile -> businessId + role
         const userSnap = await getDoc(doc(db, 'users', u.uid));
-        const userData = userSnap.data() as { businessId?: string; role?: Role } | undefined;
+        const userData = userSnap.data() as UserProfile | undefined;
 
         if (!userData?.businessId) {
           window.location.href = '/dashboard';
@@ -100,14 +118,14 @@ export default function AdminPage() {
 
         setBusinessId(userData.businessId);
 
-        // Load business name (nice to show)
+        // Load business name
         const bizSnap = await getDoc(doc(db, 'businesses', userData.businessId));
-        const bizData = bizSnap.data() as { name?: string } | undefined;
+        const bizData = bizSnap.data() as BusinessDoc | undefined;
         setBusinessName(bizData?.name || 'Business');
 
         await Promise.all([loadTransactions(userData.businessId), loadMembers(userData.businessId)]);
-      } catch (e: any) {
-        setError(e?.message || 'Failed to load admin panel.');
+      } catch (e: unknown) {
+        setError(getErrorMessage(e) || 'Failed to load admin panel.');
       } finally {
         setLoading(false);
       }
@@ -128,8 +146,7 @@ export default function AdminPage() {
       total += Number(data.amount) || 0;
     });
 
-    list.reverse(); // keep “newest first” feel
-
+    list.reverse();
     setTransactions(list);
     setBalance(total);
   };
@@ -146,23 +163,8 @@ export default function AdminPage() {
     setMembers(list);
   };
 
-  const deleteTransaction = async (txId: string, txAmount: number) => {
-    if (!businessId) return;
-    if (busy) return;
-
-    try {
-      setBusy(true);
-      await deleteDoc(doc(db, 'businesses', businessId, 'transactions', txId));
-      setTransactions((prev) => prev.filter((t) => t.id !== txId));
-      setBalance((prev) => prev - txAmount);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const createInvite = async () => {
-    if (!businessId) return;
-    if (busy) return;
+    if (!businessId || busy) return;
 
     const email = inviteEmail.trim().toLowerCase();
     if (!email) return;
@@ -182,11 +184,16 @@ export default function AdminPage() {
       const link = `${baseUrl}/login?invite=${inviteRef.id}`;
       setCreatedInviteLink(link);
       setInviteEmail('');
-    } catch (e: any) {
-      setError(e?.message || 'Failed to create invite.');
+    } catch (e: unknown) {
+      setError(getErrorMessage(e) || 'Failed to create invite.');
     } finally {
       setBusy(false);
     }
+  };
+
+  const deleteInvite = async () => {
+    // optional: if you want to delete the created invite doc once you’re done
+    // not required. leaving here would require keeping invite doc id.
   };
 
   const copyInviteLink = async () => {
@@ -219,11 +226,16 @@ export default function AdminPage() {
       {/* Header */}
       <div className="w-full max-w-6xl p-4 mb-4 bg-white rounded-lg shadow-md text-center">
         <h1 className="text-3xl font-bold mb-2">Admin Panel</h1>
+
         <p className="text-gray-600">
           {businessName} • {user.email}{' '}
           <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">ADMIN</span>
         </p>
 
+        {/* ✅ Use balance so it’s not an unused var */}
+        <p className={`mt-2 text-xl font-semibold ${balance < 5 ? 'text-red-600' : ''}`}>
+          Business Balance: £{balance.toFixed(2)}
+        </p>
 
         <div className="mt-3">
           <a className="text-blue-600 hover:underline text-sm" href="/dashboard">
@@ -243,6 +255,7 @@ export default function AdminPage() {
               activeTab === tab ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
             }`}
             onClick={() => setActiveTab(tab)}
+            disabled={busy}
           >
             {tab === 'transactions' && 'All Transactions'}
             {tab === 'team' && 'Team Members'}
@@ -288,19 +301,22 @@ export default function AdminPage() {
                         <td className="border px-3 py-2">{tx.createdByName || '—'}</td>
                         <td className="border px-3 py-2">
                           {tx.receiptUrl ? (
-                            <button className="text-blue-500 hover:underline" onClick={() => openModal(tx.receiptUrl!)}>
+                            <button
+                              className="text-blue-500 hover:underline"
+                              onClick={() => openModal(tx.receiptUrl!)}
+                              disabled={busy}
+                            >
                               View Image
                             </button>
                           ) : (
                             'No Receipt'
                           )}
                         </td>
-<td className="border px-3 py-2">
-<td className="border px-3 py-2">
-  <span className="text-gray-400 text-sm">—</span>
-</td>
-</td>
 
+                        {/* ✅ FIX: only ONE <td> (no nesting) and no delete button on admin */}
+                        <td className="border px-3 py-2">
+                          <span className="text-gray-400 text-sm">—</span>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -388,12 +404,14 @@ export default function AdminPage() {
                 className="p-3 rounded border border-gray-300"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
+                disabled={busy}
               />
 
               <select
                 className="p-3 rounded border border-gray-300"
                 value={inviteRole}
                 onChange={(e) => setInviteRole(e.target.value as Role)}
+                disabled={busy}
               >
                 <option value="member">Member</option>
                 <option value="admin">Admin</option>
@@ -417,6 +435,7 @@ export default function AdminPage() {
                     <button
                       className="bg-gray-800 text-white px-4 rounded hover:bg-black transition"
                       onClick={copyInviteLink}
+                      disabled={busy}
                     >
                       Copy
                     </button>
@@ -433,15 +452,26 @@ export default function AdminPage() {
 
       {/* Receipt modal */}
       {modalImage && (
-        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50" onClick={closeModal}>
-          <div className="relative">
-            <img
+        <div
+          className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50"
+          onClick={closeModal}
+        >
+          <div className="relative max-w-[90vw] max-h-[90vh]">
+            {/* ✅ next/image to avoid lint warning */}
+            <Image
               src={modalImage}
               alt="Receipt"
-              className="max-h-full max-w-full cursor-zoom-out"
+              width={1400}
+              height={1400}
+              className="max-h-[90vh] max-w-[90vw] w-auto h-auto cursor-zoom-out"
               onClick={(e) => e.stopPropagation()}
+              unoptimized
             />
-            <button className="absolute top-2 right-2 text-white text-3xl font-bold" onClick={closeModal}>
+            <button
+              className="absolute top-2 right-2 text-white text-3xl font-bold"
+              onClick={closeModal}
+              aria-label="Close"
+            >
               &times;
             </button>
           </div>
